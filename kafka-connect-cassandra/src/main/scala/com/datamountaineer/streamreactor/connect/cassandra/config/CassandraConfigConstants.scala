@@ -27,7 +27,7 @@ import com.datamountaineer.streamreactor.connect.config.base.const.TraitConfigCo
  * Holds the constants used in the config.
  */
 
-object CassandraConfigConstants {
+object CassandraConfigConstants{
   val CONNECTOR_PREFIX = "connect.cassandra"
 
   val USERNAME_PASSWORD = "username_password"
@@ -202,4 +202,6 @@ object CassandraConfigConstants {
 
   val DEFAULT_VALUE_SERVE_STRATEGY_DEFAULT = ""
   val DEFAULT_VALUE_SERVE_STRATEGY_DISPLAY = "Default value serve strategy"
+  var COLUMN_REMOVE_METADATA="column.remove.metadata"
+  var COLUMN_REMOVE_METADATA_DEFAULT="route|extension|answer"
 }

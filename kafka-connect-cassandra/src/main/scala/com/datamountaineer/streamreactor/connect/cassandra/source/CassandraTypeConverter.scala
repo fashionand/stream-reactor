@@ -16,14 +16,18 @@
 
 package com.datamountaineer.streamreactor.connect.cassandra.source
 
+import java.io.IOException
 import java.math.RoundingMode
+import java.util
 import java.util.Date
 
 import com.datamountaineer.streamreactor.connect.cassandra.config.CassandraSourceSetting
 import com.datastax.driver.core.ColumnDefinitions.Definition
 import com.datastax.driver.core.{CodecRegistry, _}
-import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.core.JsonParseException
+import com.fasterxml.jackson.databind.{JsonMappingException, ObjectMapper}
 import com.typesafe.scalalogging.slf4j.StrictLogging
+import org.apache.commons.lang.StringUtils
 import org.apache.kafka.connect.data._
 import org.apache.kafka.connect.errors.ConnectException
 
@@ -43,6 +47,7 @@ class CassandraTypeConverter(private val codecRegistry: CodecRegistry,
   val OPTIONAL_DECIMAL_SCHEMA: Schema = Decimal.builder(18).optional().build()
 
   private val mappingCollectionToJson: Boolean = setting.mappingCollectionToJson
+  private val columnRemoveMetaData: String = setting.columnRemoveMetaData
 
   def asJavaType(dataType: DataType): Class[_] = codecRegistry.codecFor(dataType).getJavaType.getRawType
 
@@ -69,7 +74,13 @@ class CassandraTypeConverter(private val codecRegistry: CodecRegistry,
     if (colDefList != null) {
       colDefList.foreach { c =>
         val value = mapTypes(c, row)
-        struct.put(c.getName, value)
+        logger.info(s"columb:${columnRemoveMetaData},name:${c.getName},value:${value}")
+        if (columnRemoveMetaData.split('|').contains(c.getName) && value != null) {
+          logger.info(s"name convert:${c.getName},after value:${convertStringToObject(value.toString)}")
+          struct.put(c.getName, convertStringToObject(value.toString))
+        } else {
+          struct.put(c.getName, value)
+        }
       }
     }
     struct
@@ -127,15 +138,61 @@ class CassandraTypeConverter(private val codecRegistry: CodecRegistry,
     **/
   private def collectionMapTypes(columnDef: Definition, row: Row): Any = {
     val dataType = columnDef.getType
-
+    logger.info(s"collectionMapTypes dataType:${dataType},name:${columnDef.getName}");
     dataType.getName match {
       case DataType.Name.MAP => row.getMap(columnDef.getName, asJavaType(dataType.getTypeArguments.get(0)), asJavaType(dataType.getTypeArguments.get(1)))
-      case DataType.Name.LIST => row.getList(columnDef.getName, asJavaType(dataType.getTypeArguments.get(0)))
+      case DataType.Name.LIST => converterUdtList(row.getList(columnDef.getName, asJavaType(dataType.getTypeArguments.get(0))))
       case DataType.Name.SET => row.getSet(columnDef.getName, asJavaType(dataType.getTypeArguments.get(0))).toList.asJava
       case a@_ => throw new ConnectException(s"Unsupported Cassandra type $a.")
     }
   }
 
+  def convertStringToObject(originalString: String): String = {
+    var result:String=originalString
+    if (StringUtils.isBlank(originalString)) return result
+    try {
+      val typeIndex = originalString.indexOf('|')
+      if(typeIndex==0) return result
+      logger.info(s"convertStringToObject value:${originalString}")
+      if(originalString.substring(0,4)!="java") return result
+      logger.info(s"convertStringToObject2 value:${originalString}")
+      return originalString.substring(typeIndex + 1, originalString.length)
+    } catch {
+      case e: ClassNotFoundException =>
+        logger.error("convertStringToObject-ClassNotFoundException", e)
+      case e@(_: JsonParseException | _: JsonMappingException) =>
+        logger.error("convertStringToObject-Json", e)
+      case e: IOException =>
+        logger.error("convertStringToObject-IOException", e)
+    }
+    result
+  }
+  private def converterUdtList[T](columnValue: java.util.List[T]) = {
+    logger.info(s"convertUdtList class:${columnValue.getClass}")
+    val result = new java.util.ArrayList[util.HashMap[String,Object]]()
+
+    for (item <- columnValue) {
+      var itemResult=new util.HashMap[String,Object]();
+      logger.info(s"convertUdtList item:${item.asInstanceOf[UDTValue]}")
+      item match {
+        case value: UDTValue =>
+          for (b <- value.getType.getFieldNames) {
+            logger.info(s"convertUdtList field:${value.getType.getFieldNames}")
+            logger.info(s"convertUdtList current field:${b}")
+            logger.info(s"convertUdtList field value:${value.getObject(b)}")
+            if(columnRemoveMetaData.split('|').contains(b)&&value.getObject(b)!=null){
+              logger.info(s"columnRemoveMetaData field value:${columnRemoveMetaData}")
+              itemResult.put(b,convertStringToObject(value.getObject(b).toString))
+            }else
+              itemResult.put(b,value.getObject(b))
+          }
+        case _ =>
+      }
+      result.add(itemResult)
+    }
+    logger.info(s"convertUdtList:${result}")
+    result
+  }
   /**
     * Convert a set of CQL columns from a Cassandra row to a
     * Connect schema

@@ -1,0 +1,21 @@
+version: "2"
+services:
+  cassandra:
+    image: cassandra
+    volumes:
+      - /Users/liufang/documents/ef/volume/cassandra:/var/lib/cassandra
+    ports:
+      - "9042:9042"
+  fast-data-dev:
+    image: landoop/fast-data-dev:2.1.0
+    ports:
+      - "8083:8083"
+      - "9092:9092"
+      - "2181:2181"
+      - "3030:3030"
+    environment:
+      RUNTESTS: "0"
+      CONNECTORS: "cassandra"
+      ADV_HOST: "127.0.0.2"
+    volumes:
+      - ../build/libs/:/connectors/cassandra

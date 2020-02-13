@@ -298,7 +298,7 @@ object CassandraConfigSource {
       Importance.MEDIUM,
       CassandraConfigConstants.TIMESLICE_DURATION_DOC,
       "Import",
-      8,
+      7,
       ConfigDef.Width.SHORT,
       CassandraConfigConstants.TIMESLICE_DURATION)
 
@@ -331,6 +331,15 @@ object CassandraConfigSource {
       11,
       ConfigDef.Width.LONG,
       CassandraConfigConstants.MAPPING_COLLECTION_TO_JSON)
+
+    .define(CassandraConfigConstants.COLUMN_REMOVE_METADATA,
+      Type.STRING,
+      Importance.MEDIUM,
+      CassandraConfigConstants.COLUMN_REMOVE_METADATA_DEFAULT,
+      "Mappings",
+      12,
+      ConfigDef.Width.LONG,
+      CassandraConfigConstants.COLUMN_REMOVE_METADATA)
 
 }
 

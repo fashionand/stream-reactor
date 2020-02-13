@@ -155,7 +155,9 @@ class TestCassandraTypeConverter extends WordSpec
       add("B");
       add("C");
     })
-
+    if("route|extension|answer".split('|').contains("answer")){
+     var test= cassandraTypeConverter.convertStringToObject("java.util.LinkedHashMap|{\"treeRevision\":\"TreeRevisionTest-qSLtiUgPXd\",\"schemaVersion\":1,\"courseContentId\":\"85c3bc30-351a-4670-8c98-58e7c8493c12\",\"bookContentId\":\"6697380d-6091-42a1-9be3-69afc9e960c2\",\"unitContentId\":\"7661c0a8-9841-4299-87a0-d72ebd2ed664\",\"lessonContentId\":\"44a39671-c478-4923-a386-6e4865c68eda\",\"learningUnitContentId\":\"c84c6ad9-d71c-42ae-8b24-b5bb0d10d8c3\",\"groupId\":null}");
+    }
     val colDefSet = cassandraTypeConverter.getStructColumns(row, Set.empty)
     val sr: Struct = cassandraTypeConverter.convert(row, "test", colDefSet, None)
     val schema = sr.schema()
@@ -265,7 +267,9 @@ class TestCassandraTypeConverter extends WordSpec
       CassandraConfigConstants.PASSWD -> PASSWD,
       CassandraConfigConstants.KCQL -> "INSERT INTO cassandra-source SELECT * FROM orders PK created",
       CassandraConfigConstants.POLL_INTERVAL -> "1000",
-      CassandraConfigConstants.MAPPING_COLLECTION_TO_JSON -> mappingCollectionToJson.toString
+      CassandraConfigConstants.MAPPING_COLLECTION_TO_JSON -> mappingCollectionToJson.toString,
+      CassandraConfigConstants.COLUMN_REMOVE_METADATA -> ""
+
     )
     val taskConfig = CassandraConfigSource(config);
     CassandraSettings.configureSource(taskConfig).toList.head

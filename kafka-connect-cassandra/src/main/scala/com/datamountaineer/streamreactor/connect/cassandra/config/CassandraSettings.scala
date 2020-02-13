@@ -54,7 +54,8 @@ case class CassandraSourceSetting(kcql: Kcql,
                                   timeSliceDelay: Long = CassandraConfigConstants.TIMESLICE_DELAY_DEFAULT,
                                   initialOffset: String = CassandraConfigConstants.INITIAL_OFFSET_DEFAULT,
                                   timeSliceMillis: Long = CassandraConfigConstants.TIME_SLICE_MILLIS_DEFAULT,
-                                  mappingCollectionToJson: Boolean = CassandraConfigConstants.MAPPING_COLLECTION_TO_JSON_DEFAULT
+                                  mappingCollectionToJson: Boolean = CassandraConfigConstants.MAPPING_COLLECTION_TO_JSON_DEFAULT,
+                                  columnRemoveMetaData: String = CassandraConfigConstants.COLUMN_REMOVE_METADATA_DEFAULT
                                  ) extends CassandraSetting
 
 case class CassandraSinkSetting(keySpace: String,
@@ -95,7 +96,7 @@ object CassandraSettings extends StrictLogging {
     val initialOffset = config.getString(CassandraConfigConstants.INITIAL_OFFSET)
     val timeSliceMillis = config.getLong(CassandraConfigConstants.TIME_SLICE_MILLIS)
     val mappingCollectionToJson = config.getBoolean(CassandraConfigConstants.MAPPING_COLLECTION_TO_JSON)
-
+    val columnRemoveMetadata=config.getString(CassandraConfigConstants.COLUMN_REMOVE_METADATA)
     kcqls.map { r =>
       val tCols = primaryKeyCols(r.getSource)
       val timestampType = Try(TimestampType.withName(incrementalModes(r.getSource).toUpperCase)) match {
@@ -121,7 +122,8 @@ object CassandraSettings extends StrictLogging {
         timeSliceDelay = timeSliceDelay,
         initialOffset = initialOffset,
         timeSliceMillis = timeSliceMillis,
-        mappingCollectionToJson = mappingCollectionToJson
+        mappingCollectionToJson = mappingCollectionToJson,
+        columnRemoveMetaData = columnRemoveMetadata
       )
     }.toSeq
   }
