@@ -8,5 +8,6 @@ ARG KAFKA_VERSION
 ENV STREAM_REACTOR_VERSION=${STREAM_REACTOR_VERSION}
 ENV STREAM_REACTOR_COMPONENT=${STREAM_REACTOR_COMPONENT}
 ENV KAFKA_VERSION=${KAFKA_VERSION}
+RUN mkdir /usr/share/java/kafka-connect-jdbc/
 COPY libs/ /opt/lenses/lib
 CMD ["dumb-init", "/opt/lenses/bin/entry-point"]

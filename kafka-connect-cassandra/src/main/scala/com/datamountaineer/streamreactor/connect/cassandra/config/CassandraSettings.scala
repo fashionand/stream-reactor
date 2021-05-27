@@ -46,6 +46,7 @@ case class CassandraSourceSetting(kcql: Kcql,
                                   primaryKeyColumn: Option[String] = None,
                                   timestampColType: TimestampType,
                                   pollInterval: Long = CassandraConfigConstants.DEFAULT_POLL_INTERVAL,
+                                  requestTimeout:Int=CassandraConfigConstants.DEFAULT_REQUEST_TIMEOUT,
                                   consistencyLevel: Option[ConsistencyLevel],
                                   errorPolicy: ErrorPolicy = new ThrowErrorPolicy,
                                   taskRetires: Int = CassandraConfigConstants.NBR_OF_RETIRES_DEFAULT,
@@ -55,7 +56,9 @@ case class CassandraSourceSetting(kcql: Kcql,
                                   initialOffset: String = CassandraConfigConstants.INITIAL_OFFSET_DEFAULT,
                                   timeSliceMillis: Long = CassandraConfigConstants.TIME_SLICE_MILLIS_DEFAULT,
                                   mappingCollectionToJson: Boolean = CassandraConfigConstants.MAPPING_COLLECTION_TO_JSON_DEFAULT,
-                                  columnRemoveMetaData: String = CassandraConfigConstants.COLUMN_REMOVE_METADATA_DEFAULT
+                                  columnRemoveMetaData: String = CassandraConfigConstants.COLUMN_REMOVE_METADATA_DEFAULT,
+                                  columnStringToJson: String = CassandraConfigConstants.COLUMN_STRING_TO_JSON_DEFAULT,
+                                  udtEnable: Boolean = CassandraConfigConstants.UDT_ENABLED_DEFAULT
                                  ) extends CassandraSetting
 
 case class CassandraSinkSetting(keySpace: String,
@@ -84,7 +87,7 @@ object CassandraSettings extends StrictLogging {
     val keySpace = config.getString(CassandraConfigConstants.KEY_SPACE)
     require(!keySpace.isEmpty, CassandraConfigConstants.MISSING_KEY_SPACE_MESSAGE)
     val pollInterval = config.getLong(CassandraConfigConstants.POLL_INTERVAL)
-
+    val requestTimeout=config.getInt(CassandraConfigConstants.REQUEST_TIMEOUT)
     val consistencyLevel = config.getConsistencyLevel
     val errorPolicy = config.getErrorPolicy
     val kcqls = config.getKCQL
@@ -97,6 +100,8 @@ object CassandraSettings extends StrictLogging {
     val timeSliceMillis = config.getLong(CassandraConfigConstants.TIME_SLICE_MILLIS)
     val mappingCollectionToJson = config.getBoolean(CassandraConfigConstants.MAPPING_COLLECTION_TO_JSON)
     val columnRemoveMetadata=config.getString(CassandraConfigConstants.COLUMN_REMOVE_METADATA)
+    val columnStringToJson=config.getString(CassandraConfigConstants.COLUMN_STRING_TO_JSON)
+    val udtEnable=config.getBoolean(CassandraConfigConstants.UDT_ENABLED)
     kcqls.map { r =>
       val tCols = primaryKeyCols(r.getSource)
       val timestampType = Try(TimestampType.withName(incrementalModes(r.getSource).toUpperCase)) match {
@@ -115,6 +120,7 @@ object CassandraSettings extends StrictLogging {
         primaryKeyColumn = tCols.headOption,
         timestampColType = timestampType,
         pollInterval = pollInterval,
+        requestTimeout=requestTimeout,
         errorPolicy = errorPolicy,
         consistencyLevel = consistencyLevel,
         fetchSize = fetchSize,
@@ -123,7 +129,9 @@ object CassandraSettings extends StrictLogging {
         initialOffset = initialOffset,
         timeSliceMillis = timeSliceMillis,
         mappingCollectionToJson = mappingCollectionToJson,
-        columnRemoveMetaData = columnRemoveMetadata
+        columnRemoveMetaData = columnRemoveMetadata,
+        columnStringToJson=columnStringToJson,
+        udtEnable=udtEnable
       )
     }.toSeq
   }

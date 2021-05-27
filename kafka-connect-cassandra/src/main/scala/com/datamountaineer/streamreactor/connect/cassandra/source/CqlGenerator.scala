@@ -33,11 +33,12 @@ class CqlGenerator(private val setting: CassandraSourceSetting) extends StrictLo
   private val defaultTimestamp = setting.initialOffset
 
   /**
-   * Build the CQL for the given table.
-   *
-   * @return the CQL statement (as a String)
-   */
+    * Build the CQL for the given table.
+    *
+    * @return the CQL statement (as a String)
+    */
   def getCqlStatement: String = {
+    kcql.setTTL(CassandraConfigConstants.TTL_DEFAULT)
     // build the correct CQL statement based on the KCQL mode
     val selectStatement = if (incrementMode.equals(TimestampType.NONE)) {
       generateCqlForBulkMode
@@ -55,18 +56,25 @@ class CqlGenerator(private val setting: CassandraSourceSetting) extends StrictLo
     logger.info(s"Generated CQL: $selectStatement")
     selectStatement
   }
-  
+
+  private def generateCqlForTokenMode: String = {
+    val pkCol = setting.primaryKeyColumn.getOrElse("")
+    checkCqlForPrimaryKey(pkCol)
+    val whereClause = s" WHERE token($pkCol) > token(?) LIMIT $limitRowsSize"
+    generateCqlForBulkMode + whereClause
+  }
+
   /**
-   * Build the CQL for the given table when no offset is available.
-   *
-   * @return the CQL statement (as a String)
-   */
+    * Build the CQL for the given table when no offset is available.
+    *
+    * @return the CQL statement (as a String)
+    */
   def getCqlStatementNoOffset: String = {
     // build the correct CQL statement based on the KCQL mode
     val selectStatement = if (incrementMode.equals(TimestampType.NONE)) {
       generateCqlForBulkMode
     } else {
-      // if we are not in bulk mode 
+      // if we are not in bulk mode
       // we must be in incremental mode
       logger.info(s"the increment mode is $incrementMode")
       incrementMode match {
@@ -80,31 +88,26 @@ class CqlGenerator(private val setting: CassandraSourceSetting) extends StrictLo
     selectStatement
   }
 
-  def getDefaultOffsetValue(offset: Option[String]): Option[String] = {
-    incrementMode match {
-      case TimestampType.TIMESTAMP | TimestampType.TIMEUUID | TimestampType.NONE => Some(offset.getOrElse(defaultTimestamp))
-      case TimestampType.TOKEN => offset
-    }
+  private def generateCqlForTokenModeNoOffset: String = {
+    val pkCol = setting.primaryKeyColumn.getOrElse("")
+    checkCqlForPrimaryKey(pkCol)
+    val whereClause = s" LIMIT $limitRowsSize"
+    generateCqlForBulkMode + whereClause
   }
 
-  def isTokenBased(): Boolean = {
-    incrementMode match {
-      case TimestampType.TIMESTAMP | TimestampType.TIMEUUID  | TimestampType.NONE => false
-      case TimestampType.TOKEN => true
-    }
+  private def generateCqlForTimeUuidMode: String = {
+    val pkCol = setting.primaryKeyColumn.getOrElse("")
+    checkCqlForPrimaryKey(pkCol)
+    val whereClause = s" WHERE resultdate=? and $pkCol > maxTimeuuid(?) AND $pkCol <= minTimeuuid(?)"
+    generateCqlForBulkMode + whereClause
   }
 
-  /**
-   * get the columns for the SELECT statement
-   *
-   * @return the comma separated columns
-   */
-  private def getSelectColumns(): String = {
-    val fieldList = kcql.getFields.map(fa => fa.getName)
-    // if no columns set then select all the columns in the table
-    val selectColumns = if (fieldList == null || fieldList.isEmpty) "*" else fieldList.mkString(",")
-    logger.debug(s"the fields to select are $selectColumns")
-    selectColumns
+  private def generateCqlForTimestampMode: String = {
+    val pkCol = setting.primaryKeyColumn.getOrElse("")
+    checkCqlForPrimaryKey(pkCol)
+//    val whereClause = s" WHERE $pkCol > maxTimeuuid(?) AND $pkCol <= minTimeuuid(?)"
+    val whereClause = s" WHERE $pkCol > maxTimeuuid(?) AND $pkCol <= minTimeuuid(?) ALLOW FILTERING"
+    generateCqlForBulkMode + whereClause
   }
 
   private def checkCqlForPrimaryKey(pkCol: String) = {
@@ -116,35 +119,34 @@ class CqlGenerator(private val setting: CassandraSourceSetting) extends StrictLo
     }
   }
 
-  private def generateCqlForTokenMode: String = {
-    val pkCol = setting.primaryKeyColumn.getOrElse("")
-    checkCqlForPrimaryKey(pkCol)
-    val whereClause = s" WHERE token($pkCol) > token(?) LIMIT $limitRowsSize"
-    generateCqlForBulkMode + whereClause
-  }
-
-  private def generateCqlForTokenModeNoOffset: String = {
-    val pkCol = setting.primaryKeyColumn.getOrElse("")
-    checkCqlForPrimaryKey(pkCol)
-    val whereClause = s" LIMIT $limitRowsSize"
-    generateCqlForBulkMode + whereClause
-  }
-
-  private def generateCqlForTimeUuidMode: String = {
-    val pkCol = setting.primaryKeyColumn.getOrElse("")
-    checkCqlForPrimaryKey(pkCol)
-    val whereClause = s" WHERE $pkCol > maxTimeuuid(?) AND $pkCol <= minTimeuuid(?) ALLOW FILTERING"
-    generateCqlForBulkMode + whereClause
-  }
-
-  private def generateCqlForTimestampMode: String = {
-    val pkCol = setting.primaryKeyColumn.getOrElse("")
-    checkCqlForPrimaryKey(pkCol)
-    val whereClause = s" WHERE $pkCol > ? AND $pkCol <= ? ALLOW FILTERING"
-    generateCqlForBulkMode + whereClause
-  }
-
   private def generateCqlForBulkMode: String = {
     s"SELECT $selectColumns FROM $keySpace.$table"
+  }
+
+  def getDefaultOffsetValue(offset: Option[String]): Option[String] = {
+    incrementMode match {
+      case TimestampType.TIMESTAMP | TimestampType.TIMEUUID | TimestampType.NONE => Some(offset.getOrElse(defaultTimestamp))
+      case TimestampType.TOKEN => offset
+    }
+  }
+
+  def isTokenBased(): Boolean = {
+    incrementMode match {
+      case TimestampType.TIMESTAMP | TimestampType.TIMEUUID | TimestampType.NONE => false
+      case TimestampType.TOKEN => true
+    }
+  }
+
+  /**
+    * get the columns for the SELECT statement
+    *
+    * @return the comma separated columns
+    */
+  private def getSelectColumns(): String = {
+    val fieldList = kcql.getFields.map(fa => fa.getName)
+    // if no columns set then select all the columns in the table
+    val selectColumns = if (fieldList == null || fieldList.isEmpty) "*" else fieldList.mkString(",")
+    logger.debug(s"the fields to select are $selectColumns")
+    selectColumns
   }
 }

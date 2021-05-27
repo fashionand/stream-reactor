@@ -45,7 +45,7 @@ import scala.util.{Failure, Success, Try}
  * Cassandra Json writer for Kafka connect
  * Writes a list of Kafka connect sink records to Cassandra using the JSON support.
  */
-class CassandraJsonWriter(connection: CassandraConnection, settings: CassandraSinkSetting)
+class CassandraJsonWriter2(connection: CassandraConnection, settings: CassandraSinkSetting)
   extends StrictLogging with ConverterUtil with ErrorHandler {
 
   val mapper = new ObjectMapper()
@@ -173,7 +173,7 @@ class CassandraJsonWriter(connection: CassandraConnection, settings: CassandraSi
   private def insert(record: SinkRecord) = {
     val tables = preparedCache.getOrElse(record.topic(), throw new IllegalArgumentException(s"Topic ${record.topic()} doesn't have a KCQL setup"))
     tables.foreach { case (table, (statement, kcql)) =>
-      logger.info(s"insertrecord kcql $kcql,retain structure ${kcql.hasRetainStructure},schema ${record.valueSchema()} value:${record.value()}")
+            logger.info(s"insertrecord kcql $kcql,retain structure ${kcql.hasRetainStructure},schema ${record.valueSchema()} value:${record.value()}")
       val json = Transform(
         kcql.getFields.map(FieldConverter.apply),
         kcql.getIgnoredFields.map(FieldConverter.apply),

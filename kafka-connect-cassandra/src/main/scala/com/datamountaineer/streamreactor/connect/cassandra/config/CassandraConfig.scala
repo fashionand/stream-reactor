@@ -341,6 +341,33 @@ object CassandraConfigSource {
       ConfigDef.Width.LONG,
       CassandraConfigConstants.COLUMN_REMOVE_METADATA)
 
+    .define(CassandraConfigConstants.COLUMN_STRING_TO_JSON,
+      Type.STRING,
+      Importance.MEDIUM,
+      CassandraConfigConstants.COLUMN_STRING_TO_JSON_DEFAULT,
+      "Mappings",
+      13,
+      ConfigDef.Width.LONG,
+      CassandraConfigConstants.COLUMN_STRING_TO_JSON)
+
+    .define(CassandraConfigConstants.UDT_ENABLED,
+      Type.BOOLEAN,
+      CassandraConfigConstants.UDT_ENABLED_DEFAULT,
+      Importance.MEDIUM,
+      CassandraConfigConstants.UDT_ENABLED_DOC,
+      "Import",
+      14,
+      ConfigDef.Width.LONG,
+      CassandraConfigConstants.UDT_ENABLED)
+    .define(CassandraConfigConstants.REQUEST_TIMEOUT,
+      Type.INT,
+      CassandraConfigConstants.DEFAULT_REQUEST_TIMEOUT,
+      Importance.MEDIUM,
+      CassandraConfigConstants.REQUEST_TIMEOUT_DOC,
+      "Import",
+      15,
+      ConfigDef.Width.LONG,
+      CassandraConfigConstants.REQUEST_TIMEOUT)
 }
 
 case class CassandraConfigSource(props: util.Map[String, String])

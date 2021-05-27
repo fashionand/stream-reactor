@@ -39,9 +39,10 @@ import scala.util.{Failure, Success, Try}
 
 
 class CassandraSourceTask extends SourceTask with StrictLogging {
-  private var queues = mutable.Map.empty[String, LinkedBlockingQueue[SourceRecord]]
   private val readers = mutable.Map.empty[String, CassandraTableReader]
   private val stopControl = new Object()
+  private val manifest = JarManifest(getClass.getProtectionDomain.getCodeSource.getLocation)
+  private var queues = mutable.Map.empty[String, LinkedBlockingQueue[SourceRecord]]
   private var taskConfig: Option[CassandraConfigSource] = None
   private var connection: Option[CassandraConnection] = None
   private var settings: Seq[CassandraSourceSetting] = _
@@ -50,8 +51,6 @@ class CassandraSourceTask extends SourceTask with StrictLogging {
   private var tracker: Long = 0
   private var pollInterval: Long = CassandraConfigConstants.DEFAULT_POLL_INTERVAL
   private var name: String = ""
-  private val manifest = JarManifest(getClass.getProtectionDomain.getCodeSource.getLocation)
-
 
   /**
     * Starts the Cassandra source, parsing the options and setting up the reader.
@@ -102,6 +101,13 @@ class CassandraSourceTask extends SourceTask with StrictLogging {
   }
 
   /**
+    * Gets the version of this Source.
+    *
+    * @return
+    */
+  override def version: String = manifest.version()
+
+  /**
     * Called by the Framework
     *
     * Map over the queues, draining each and returning SourceRecords.
@@ -113,22 +119,6 @@ class CassandraSourceTask extends SourceTask with StrictLogging {
       .map(s => s.kcql)
       .flatten(r => process(r.getSource))
       .toList
-  }
-
-  /**
-    * Waiting Poll Interval
-    *
-    */
-  private def waitPollInterval = {
-    val now = System.currentTimeMillis()
-    if (tracker + pollInterval <= now) {
-      tracker = now
-    } else {
-      logger.debug(s"Waiting for poll interval to pass")
-      stopControl.synchronized{
-        stopControl.wait(pollInterval)
-      }
-    }
   }
 
   /**
@@ -144,7 +134,7 @@ class CassandraSourceTask extends SourceTask with StrictLogging {
     val reader = readers(tableName)
     val queue = queues(tableName)
 
-    logger.info(s"Connector $name start of poll queue size for $tableName is: ${queue.size}")
+    logger.debug(s"Connector $name start of poll queue size for $tableName is: ${queue.size}")
 
     // minimized the changes but still fix #300
     // depending on buffer size, batch size, and volume of data coming in
@@ -159,21 +149,37 @@ class CassandraSourceTask extends SourceTask with StrictLogging {
       // if we are in the middle of working
       // on data from the last polling cycle
       // we will not attempt to get more data
-      logger.info(s"Connector $name reader for table $tableName is still querying...")
+      logger.debug(s"Connector $name reader for table2 $tableName is still querying...")
     }
 
     // let's make some of the data on the queue
     // available for publishing to Kafka
     val records = if (!queue.isEmpty) {
-      logger.info(s"Connector $name attempting to drain $batchSize items from the queue for table $tableName")
+      logger.debug(s"Connector $name attempting to drain $batchSize items from the queue for table $tableName")
       QueueHelpers.drainQueue(queue, batchSize.get).toList
     } else {
       List[SourceRecord]()
     }
 
-    logger.info(s"Connector $name end of poll queue size for $tableName is: ${queue.size}")
+    logger.debug(s"Connector $name end of poll queue size for $tableName is: ${queue.size}")
 
     records
+  }
+
+  /**
+    * Waiting Poll Interval
+    *
+    */
+  private def waitPollInterval = {
+    val now = System.currentTimeMillis()
+    if (tracker + pollInterval <= now) {
+      tracker = now
+    } else {
+      logger.debug(s"Waiting for poll interval to pass")
+      stopControl.synchronized {
+        stopControl.wait(pollInterval)
+      }
+    }
   }
 
   /**
@@ -190,14 +196,6 @@ class CassandraSourceTask extends SourceTask with StrictLogging {
     connection.get.session.close()
     cluster.close()
   }
-
-  /**
-    * Gets the version of this Source.
-    *
-    * @return
-    */
-  override def version: String = manifest.version()
-
 
   /**
     * Check if the reader for a table is querying.

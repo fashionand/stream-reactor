@@ -38,12 +38,18 @@ object CassandraConfigConstants{
   val POLL_INTERVAL = s"$CONNECTOR_PREFIX.import.poll.interval"
   val POLL_INTERVAL_DOC = "The polling interval between queries against tables for bulk mode."
 
+  val DEFAULT_REQUEST_TIMEOUT = 30000
+
+  val REQUEST_TIMEOUT = s"$CONNECTOR_PREFIX.request.timeout"
+  val REQUEST_TIMEOUT_DOC = "The cql request timeout."
+
   val KEY_SPACE = s"$CONNECTOR_PREFIX.key.space"
   val KEY_SPACE_DOC = "Keyspace to write to."
 
   val CONTACT_POINTS = s"$CONNECTOR_PREFIX.contact.points"
   val CONTACT_POINT_DOC = "Initial contact point host for Cassandra including port."
   val CONTACT_POINT_DEFAULT = "localhost"
+
 
   val PORT = s"$CONNECTOR_PREFIX.port"
   val PORT_DEFAULT = "9042"
@@ -89,6 +95,10 @@ object CassandraConfigConstants{
   val BATCH_SIZE = s"$CONNECTOR_PREFIX.$BATCH_SIZE_PROP_SUFFIX"
   val BATCH_SIZE_DOC = "The number of records the source task should drain from the reader queue."
   val BATCH_SIZE_DEFAULT = 100
+
+  val TTL = s"$CONNECTOR_PREFIX.ttl"
+  val TTL_DOC = "The timout number of ksql."
+  val TTL_DEFAULT = 10000
 
   val FETCH_SIZE = s"$CONNECTOR_PREFIX.fetch.size"
   val FETCH_SIZE_DOC = "The number of records the Cassandra driver will return at once."
@@ -193,6 +203,9 @@ object CassandraConfigConstants{
   val MAPPING_COLLECTION_TO_JSON_DOC = "Mapping columns with type Map, List and Set like json"
   val MAPPING_COLLECTION_TO_JSON_DEFAULT = true
 
+  val COLUMN_STRING_TO_JSON = "column.string.to.json"
+  val COLUMN_STRING_TO_JSON_DOC = "Mapping columns with string like json"
+
   val DEFAULT_VALUE_SERVE_STRATEGY_PROPERTY = s"$CONNECTOR_PREFIX.default.value"
   val DEFAULT_VALUE_SERVE_STRATEGY_DOC =
     """
@@ -204,4 +217,11 @@ object CassandraConfigConstants{
   val DEFAULT_VALUE_SERVE_STRATEGY_DISPLAY = "Default value serve strategy"
   var COLUMN_REMOVE_METADATA="column.remove.metadata"
   var COLUMN_REMOVE_METADATA_DEFAULT="route|extension|answer"
+  var COLUMN_STRING_TO_JSON_DEFAULT="details|route12"
+
+
+  val UDT_ENABLED = s"udt.enabled"
+  val UDT_ENABLED_DOC = "Enables uild the struct by udt from cassandra"
+  val UDT_ENABLED_DEFAULT = false
+  val UDT_ENABLED_DISPLAY = "Enable build the struct by udt"
 }

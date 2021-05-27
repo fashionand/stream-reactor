@@ -1,0 +1,8 @@
+#ARG BASE_VERSION
+#FROM streamreactor/stream-reactor-base:1.2.1
+FROM openjdk:11-jre
+#ENV STREAM_REACTOR_VERSION=1.2.1
+#ENV STREAM_REACTOR_COMPONENT=cassandra
+#ENV KAFKA_VERSION=2.1.0
+#COPY libs/ /opt/lenses/lib
+#CMD ["dumb-init", "/opt/lenses/bin/entry-point"]

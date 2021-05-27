@@ -16,18 +16,16 @@
 
 package com.datamountaineer.streamreactor.connect.cassandra.source
 
-import java.io.IOException
 import java.math.RoundingMode
+import java.text.SimpleDateFormat
 import java.util
 import java.util.Date
 
 import com.datamountaineer.streamreactor.connect.cassandra.config.CassandraSourceSetting
 import com.datastax.driver.core.ColumnDefinitions.Definition
 import com.datastax.driver.core.{CodecRegistry, _}
-import com.fasterxml.jackson.core.JsonParseException
-import com.fasterxml.jackson.databind.{JsonMappingException, ObjectMapper}
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.typesafe.scalalogging.slf4j.StrictLogging
-import org.apache.commons.lang.StringUtils
 import org.apache.kafka.connect.data._
 import org.apache.kafka.connect.errors.ConnectException
 
@@ -45,9 +43,14 @@ class CassandraTypeConverter(private val codecRegistry: CodecRegistry,
   val OPTIONAL_DATE_SCHEMA: Schema = org.apache.kafka.connect.data.Date.builder().optional().build()
   val OPTIONAL_TIMESTAMP_SCHEMA: Schema = Timestamp.builder().optional().build()
   val OPTIONAL_DECIMAL_SCHEMA: Schema = Decimal.builder(18).optional().build()
+  val OPTIONAL_TIMESTAMP_INT64_SCHEMA: Schema = SchemaBuilder.int64().name("org.apache.kafka.connect.data.Timestamp").version(1).build()
 
   private val mappingCollectionToJson: Boolean = setting.mappingCollectionToJson
   private val columnRemoveMetaData: String = setting.columnRemoveMetaData
+  private val columnStringToArrayColumns: String=setting.columnStringToJson
+  private val udtEable: Boolean=setting.udtEnable
+  private val SPLIT_CHAR: String = "|"
+
 
   def asJavaType(dataType: DataType): Class[_] = codecRegistry.codecFor(dataType).getJavaType.getRawType
 
@@ -63,27 +66,196 @@ class CassandraTypeConverter(private val codecRegistry: CodecRegistry,
   }
 
   /**
+   * Convert a Cassandra row to a SourceRecord
+   *
+   * @param row The Cassandra resultset row to convert
+   * @return a SourceRecord
+   **/
+  def convert(row: Row, schemaName: String, colDefList: List[ColumnDefinitions.Definition], schema: Option[Schema]): Struct = {
+    if (udtEable)
+      convertByUDT(row, schemaName, colDefList, schema)
+    else
+      convertByJson(row, schemaName, colDefList, schema)
+  }
+  /**
     * Convert a Cassandra row to a SourceRecord
     *
     * @param row The Cassandra resultset row to convert
     * @return a SourceRecord
     **/
-  def convert(row: Row, schemaName: String, colDefList: List[ColumnDefinitions.Definition], schema: Option[Schema]): Struct = {
-    val connectSchema = schema.getOrElse(convertToConnectSchema(colDefList, schemaName))
+  def convertByUDT(row: Row, schemaName: String, colDefList: List[ColumnDefinitions.Definition], schema: Option[Schema]): Struct = {
+    val connectSchema = schema.getOrElse(convertToConnectSchema(row, colDefList, schemaName))
+    if (connectSchema == null || connectSchema.schema() == null)
+      throw new NoSuchElementException("convert.connectSchema is null")
+    connectSchema.schema()
     val struct = new Struct(connectSchema)
     if (colDefList != null) {
       colDefList.foreach { c =>
-        val value = mapTypes(c, row)
-        logger.info(s"columb:${columnRemoveMetaData},name:${c.getName},value:${value}")
-        if (columnRemoveMetaData.split('|').contains(c.getName) && value != null) {
-          logger.info(s"name convert:${c.getName},after value:${convertStringToObject(value.toString)}")
-          struct.put(c.getName, convertStringToObject(value.toString))
+        if (!c.getType.getTypeArguments.isEmpty) {
+          struct.put(c.getName, converterUdtList(c.getName, connectSchema, row.getList(c.getName, asJavaType(c.getType.getTypeArguments.get(0)))))
         } else {
-          struct.put(c.getName, value)
+          val colValue = mapTypes(c, row)
+          struct.put(c.getName, if (isRemoveCharColumn(c.getName) && colValue != null) removeSplitChar(colValue.toString) else colValue);
         }
       }
     }
     struct
+  }
+
+  /**
+   * Convert a Cassandra row to a SourceRecord
+   *
+   * @param row The Cassandra resultset row to convert
+   * @return a SourceRecord
+   **/
+  def convertByJson(row: Row, schemaName: String, colDefList: List[ColumnDefinitions.Definition], schema: Option[Schema]): Struct = {
+    val connectSchema = schema.getOrElse(convertToConnectSchemaByJson(row, colDefList, schemaName))
+    if (connectSchema == null || connectSchema.schema() == null)
+      throw new NoSuchElementException("convert.connectSchema is null")
+    connectSchema.schema()
+    val struct = new Struct(connectSchema)
+    if (colDefList != null) {
+      colDefList.foreach { c =>
+        if (columnStringToArrayColumns.split('|').contains(c.getName))
+          struct.put(c.getName, mapJavaTypeToArray(c.getName, connectSchema, row.getString(c.getName)))
+        else
+          struct.put(c.getName, mapTypes(c, row))
+      }
+    }
+    struct
+  }
+
+  def mapJavaTypeToArray(colName: String, schema: Schema,colValue:String): java.util.ArrayList[Struct] = {
+    val result = new java.util.ArrayList[Struct]()
+    val arraySchema = schema.field(colName).schema.valueSchema()
+    val convertToArray = mapper.readValue[Array[util.HashMap[String, String]]](colValue, classOf[Array[util.HashMap[String, String]]])
+    convertToArray.map(item => {
+      val structItem = new Struct(arraySchema)
+      item.entrySet().foreach(subCol => {
+        if (subCol.getValue == null)
+          structItem.put(subCol.getKey.toString, null)
+        else if (subCol.getKey.toLowerCase.contains("time"))
+          structItem.put(subCol.getKey.toString, new Date(new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").parse(subCol.getValue).getTime))
+        else if (subCol.getValue.getClass.getTypeName.contains("lang"))
+          structItem.put(subCol.getKey.toString, subCol.getValue)
+        else
+          structItem.put(subCol.getKey.toString, mapper.writeValueAsString(subCol.getValue))
+
+      })
+      result.add(structItem)
+    }
+    )
+    result
+  }
+  /**
+    * Remove the split char
+    *
+    * @param originalString column name
+    * @return a string
+    **/
+  def removeSplitChar(originalString: String): String = {
+    originalString.substring(originalString.indexOf(SPLIT_CHAR) + 1, originalString.length)
+  }
+
+  /**
+    * Convert a set of CQL columns from a Cassandra row to a
+    * Connect schema
+    *
+    * @param cols A set of Column Definitions
+    * @return a Connect Schema
+    **/
+  def convertToConnectSchema(row: Row, cols: List[Definition], name: String): Schema = {
+    val builder = SchemaBuilder.struct().name(name)
+    if (cols == null)
+      throw new NoSuchElementException("convertToConnectSchema empty list")
+    for (col <- cols) {
+      if (!col.getType.getTypeArguments.isEmpty) {
+        val arraySchemaBuilder = SchemaBuilder.struct.name(builder.name() + "." + col.getName).optional
+        val udtValueList = row.getList(col.getName, asJavaType(col.getType.getTypeArguments.get(0)))
+        if (!udtValueList.isEmpty) {
+          val udtValue: UDTValue = udtValueList.get(0).asInstanceOf[UDTValue]
+          if (udtValue.getType != null) {
+            for (subCol <- udtValue.getType) {
+              arraySchemaBuilder.field(subCol.getName, typeMapToConnect(subCol.getType))
+            }
+          }
+        }
+        builder.field(col.getName, SchemaBuilder.array(arraySchemaBuilder).optional().build())
+      }
+      else {
+        builder.field(col.getName, typeMapToConnect(col.getType))
+      }
+    }
+    builder.build()
+  }
+
+
+  /**
+   * Buid the schema by array in json
+   *
+   * @param row the row of the record
+   * @param cols the cols of the schema
+   * @param name the name of the schema
+   * @return The converted value
+   **/
+  def convertToConnectSchemaByJson(row: Row, cols: List[Definition], name: String): Schema = {
+    val builder = SchemaBuilder.struct().name(name)
+    if (cols == null)
+      throw new NoSuchElementException("convertToConnectSchema empty list")
+    cols.map(c => {
+      if (columnStringToArrayColumns.split('|').contains(c.getName))
+        builder.field(c.getName, SchemaBuilder.array(buildStructFieldFromArray(builder.name(), c.getName, row)).optional().build())
+      else
+        builder.field(c.getName, typeMapToConnect(c.getType))
+    })
+    builder.build()
+  }
+
+
+  /**
+   * Buid the schema by array in json
+   *
+   * @param columnName the
+   * @return The converted value
+   **/
+  def buildStructFieldFromArray(buildName:String,columnName :String,row: Row): Schema = {
+    val arraySchemaBuilder = SchemaBuilder.struct.name(buildName + "." + columnName).optional
+    val convertToArray = mapper.readValue[Array[util.HashMap[String, String]]](row.getString(columnName), classOf[Array[util.HashMap[String, String]]])
+    convertToArray(0).entrySet().foreach(subCol => {
+      arraySchemaBuilder.field(subCol.getKey.toString, mapColumnNameToSchema(subCol.getKey.toString))
+    }
+    )
+    arraySchemaBuilder
+  }
+
+  /**
+   * Extract the Cassandra data type can convert to the Connect type
+   *
+   * @param columnName the
+   * @return The converted value
+   **/
+  def mapColumnNameToSchema(columnName: String): Schema = {
+    columnName.toLowerCase match {
+      case "duration" => Schema.OPTIONAL_INT32_SCHEMA
+      case "expectedscore" | "actualscore" => Schema.OPTIONAL_FLOAT64_SCHEMA
+      case "starttime" | "endtime" => OPTIONAL_TIMESTAMP_SCHEMA
+      case a@_ => Schema.OPTIONAL_STRING_SCHEMA
+    }
+  }
+
+  /**
+   * Extract the Cassandra data type can convert to the Connect type
+   *
+   * @param javaType the java type
+   * @return The converted value
+   **/
+  def mapJavaTypesToSchema(javaType: String): Schema = {
+    javaType match {
+      case "java.lang.String" => Schema.OPTIONAL_STRING_SCHEMA
+      case "java.lang.Double" => Schema.OPTIONAL_FLOAT64_SCHEMA
+      case  "java.lang.Integer" => Schema.OPTIONAL_INT32_SCHEMA
+      case a@_ =>Schema.OPTIONAL_STRING_SCHEMA
+    }
   }
 
   /**
@@ -101,7 +273,7 @@ class CassandraTypeConverter(private val codecRegistry: CodecRegistry,
         }.orNull
       case DataType.Name.ASCII | DataType.Name.TEXT | DataType.Name.VARCHAR => row.getString(columnDef.getName)
       case DataType.Name.INET => row.getInet(columnDef.getName).toString
-      case DataType.Name.MAP | DataType.Name.LIST | DataType.Name.SET  =>
+      case DataType.Name.MAP | DataType.Name.LIST | DataType.Name.SET =>
         if (mappingCollectionToJson) mapper.writeValueAsString(collectionMapTypes(columnDef, row))
         else collectionMapTypes(columnDef, row)
       case DataType.Name.UUID =>
@@ -138,73 +310,44 @@ class CassandraTypeConverter(private val codecRegistry: CodecRegistry,
     **/
   private def collectionMapTypes(columnDef: Definition, row: Row): Any = {
     val dataType = columnDef.getType
-    logger.info(s"collectionMapTypes dataType:${dataType},name:${columnDef.getName}");
     dataType.getName match {
       case DataType.Name.MAP => row.getMap(columnDef.getName, asJavaType(dataType.getTypeArguments.get(0)), asJavaType(dataType.getTypeArguments.get(1)))
-      case DataType.Name.LIST => converterUdtList(row.getList(columnDef.getName, asJavaType(dataType.getTypeArguments.get(0))))
+      case DataType.Name.LIST => row.getList(columnDef.getName, asJavaType(dataType.getTypeArguments.get(0)))
       case DataType.Name.SET => row.getSet(columnDef.getName, asJavaType(dataType.getTypeArguments.get(0))).toList.asJava
       case a@_ => throw new ConnectException(s"Unsupported Cassandra type $a.")
     }
   }
 
-  def convertStringToObject(originalString: String): String = {
-    var result:String=originalString
-    if (StringUtils.isBlank(originalString)) return result
-    try {
-      val typeIndex = originalString.indexOf('|')
-      if(typeIndex==0) return result
-      logger.info(s"convertStringToObject value:${originalString}")
-      if(originalString.substring(0,4)!="java") return result
-      logger.info(s"convertStringToObject2 value:${originalString}")
-      return originalString.substring(typeIndex + 1, originalString.length)
-    } catch {
-      case e: ClassNotFoundException =>
-        logger.error("convertStringToObject-ClassNotFoundException", e)
-      case e@(_: JsonParseException | _: JsonMappingException) =>
-        logger.error("convertStringToObject-Json", e)
-      case e: IOException =>
-        logger.error("convertStringToObject-IOException", e)
-    }
-    result
-  }
-  private def converterUdtList[T](columnValue: java.util.List[T]) = {
-    logger.info(s"convertUdtList class:${columnValue.getClass}")
-    val result = new java.util.ArrayList[util.HashMap[String,Object]]()
-
-    for (item <- columnValue) {
-      var itemResult=new util.HashMap[String,Object]();
-      logger.info(s"convertUdtList item:${item.asInstanceOf[UDTValue]}")
-      item match {
-        case value: UDTValue =>
-          for (b <- value.getType.getFieldNames) {
-            logger.info(s"convertUdtList field:${value.getType.getFieldNames}")
-            logger.info(s"convertUdtList current field:${b}")
-            logger.info(s"convertUdtList field value:${value.getObject(b)}")
-            if(columnRemoveMetaData.split('|').contains(b)&&value.getObject(b)!=null){
-              logger.info(s"columnRemoveMetaData field value:${columnRemoveMetaData}")
-              itemResult.put(b,convertStringToObject(value.getObject(b).toString))
-            }else
-              itemResult.put(b,value.getObject(b))
-          }
-        case _ =>
-      }
-      result.add(itemResult)
-    }
-    logger.info(s"convertUdtList:${result}")
-    result
-  }
   /**
-    * Convert a set of CQL columns from a Cassandra row to a
-    * Connect schema
+    * Convert row from a Cassandra list udt row to a struct
     *
-    * @param cols A set of Column Definitions
-    * @return a Connect Schema
+    * @param colName column name
+    * @param schema  the struct schema
+    * @return a Connect array struct
     **/
-  def convertToConnectSchema(cols: List[Definition], name: String): Schema = {
-    val builder = SchemaBuilder.struct().name(name)
-    if (cols != null) cols.map(c => builder.field(c.getName, typeMapToConnect(c.getType)))
-    builder.build()
+  private def converterUdtList[T](colName: String, schema: Schema, columnValue: java.util.List[T]) = {
+    val result = new java.util.ArrayList[Struct]()
+    val arraySchema = schema.field(colName).schema.valueSchema()
+    if (columnValue == null)
+      throw new NoSuchElementException("converterUdtList empty list")
+    for (item <- columnValue) {
+      val arrayStruct = new Struct(arraySchema)
+      val subItem: UDTValue = item.asInstanceOf[UDTValue]
+      if (subItem.getType.getFieldNames != null) {
+        for (subCol <- subItem.getType.getFieldNames) {
+          arrayStruct.put(subCol, if (isRemoveCharColumn(subCol) && subItem.getObject(subCol) != null) removeSplitChar(subItem.getObject(subCol).toString) else subItem.getObject(subCol))
+        }
+      }
+      result.add(arrayStruct)
+    }
+    result
   }
+
+
+  private def isRemoveCharColumn(colName: String): Boolean = {
+    columnRemoveMetaData.split('|').contains(colName)
+  }
+
 
   /**
     * Map the Cassandra DataType to the Connect types
@@ -234,7 +377,7 @@ class CassandraTypeConverter(private val codecRegistry: CodecRegistry,
       case DataType.Name.FLOAT => Schema.OPTIONAL_FLOAT32_SCHEMA
       case DataType.Name.COUNTER | DataType.Name.BIGINT | DataType.Name.VARINT | DataType.Name.TIME => Schema.OPTIONAL_INT64_SCHEMA
       case DataType.Name.BLOB => Schema.OPTIONAL_BYTES_SCHEMA
-      case DataType.Name.MAP | DataType.Name.LIST | DataType.Name.SET  => collectionTypeMapToConnect(dataType)
+      case DataType.Name.MAP | DataType.Name.LIST | DataType.Name.SET => collectionTypeMapToConnect(dataType)
       case a@_ => throw new ConnectException(s"Unsupported Cassandra type $a.")
     }
   }
@@ -247,17 +390,17 @@ class CassandraTypeConverter(private val codecRegistry: CodecRegistry,
     **/
   private def collectionTypeMapToConnect(dataType: DataType): Schema = {
 
-    if(mappingCollectionToJson){
+    if (mappingCollectionToJson) {
       Schema.OPTIONAL_STRING_SCHEMA
     } else {
       dataType.getName match {
-        case DataType.Name.LIST | DataType.Name.SET  => SchemaBuilder.array(
-            typeMapToConnect(dataType.getTypeArguments.get(0))
-          ).optional().build();
-        case DataType.Name.MAP  => SchemaBuilder.map(
-            typeMapToConnect(dataType.getTypeArguments.get(0)),
-            typeMapToConnect(dataType.getTypeArguments.get(1))
-          ).optional().build()
+        case DataType.Name.LIST | DataType.Name.SET => SchemaBuilder.array(
+          typeMapToConnect(dataType.getTypeArguments.get(0))
+        ).optional().build();
+        case DataType.Name.MAP => SchemaBuilder.map(
+          typeMapToConnect(dataType.getTypeArguments.get(0)),
+          typeMapToConnect(dataType.getTypeArguments.get(1))
+        ).optional().build()
         case a@_ => throw new ConnectException(s"Unsupported Cassandra type $a.")
       }
     }
