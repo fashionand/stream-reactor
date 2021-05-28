@@ -145,9 +145,9 @@ class CassandraTableReader(private val name: String,
     val upperDateBound=dateFormatterByDate.parse(upperBoundString).toInstant
 
     val diffMill=upperBound.toEpochMilli-upperDateBound.toEpochMilli
-    val primaryDate= if(previousDateString!=upperBoundString&&diffMill>300000) upperBound else previous
+    val primaryDate= if(previousDateString!=upperBoundString&&diffMill>setting.crossDiffDateDuration) upperBound else previous
     val primaryString = primaryDate.toString.substring(0, 10)
-    logger.info(s"Connector $name query ${preparedStatement.getQueryString} executing with bindings ($primaryString, $formattedPrevious, $formattedNow,previousDateString:$previousDateString,upperBoundString:$upperBoundString,upperDateBound:$upperDateBound,diffMill:$diffMill,upperBound.toEpochMilli:${upperBound.toEpochMilli},upperDateBound.toEpochMilli:${upperDateBound.toEpochMilli},requestTimeout:${setting.requestTimeout}")
+    logger.info(s"Connector $name query ${preparedStatement.getQueryString} executing with bindings ($primaryString, $formattedPrevious, $formattedNow,previousDateString:$previousDateString,upperBoundString:$upperBoundString,upperDateBound:$upperDateBound,diffMill:$diffMill,upperBound.toEpochMilli:${upperBound.toEpochMilli},upperDateBound.toEpochMilli:${upperDateBound.toEpochMilli},requestTimeout:${setting.requestTimeout},crossDiffDateDuration:${setting.crossDiffDateDuration}")
     //     bind the offset and db time
     val bound = preparedStatement.bind(String.valueOf(primaryString), Date.from(previous), Date.from(upperBound))
     bound.setFetchSize(setting.fetchSize)

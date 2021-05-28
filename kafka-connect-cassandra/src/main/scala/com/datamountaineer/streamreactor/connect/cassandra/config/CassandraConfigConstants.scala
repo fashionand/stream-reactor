@@ -43,6 +43,12 @@ object CassandraConfigConstants{
   val REQUEST_TIMEOUT = s"$CONNECTOR_PREFIX.request.timeout"
   val REQUEST_TIMEOUT_DOC = "The cql request timeout."
 
+
+  val DEFAULT_CROSS_DIFFERENT_PERIODS_DURATION = 120000
+
+  val CROSS_DIFFERENT_DATE_DURATION = s"$CONNECTOR_PREFIX.cross.diff.date.duration"
+  val CROSS_DIFFERENT_DATE_DURATION_DOC = "Cross different date periods duration to waiting for pull data."
+
   val KEY_SPACE = s"$CONNECTOR_PREFIX.key.space"
   val KEY_SPACE_DOC = "Keyspace to write to."
 

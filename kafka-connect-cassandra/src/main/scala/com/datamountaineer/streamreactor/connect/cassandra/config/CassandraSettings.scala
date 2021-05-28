@@ -47,6 +47,7 @@ case class CassandraSourceSetting(kcql: Kcql,
                                   timestampColType: TimestampType,
                                   pollInterval: Long = CassandraConfigConstants.DEFAULT_POLL_INTERVAL,
                                   requestTimeout:Int=CassandraConfigConstants.DEFAULT_REQUEST_TIMEOUT,
+                                  crossDiffDateDuration:Int=CassandraConfigConstants.DEFAULT_CROSS_DIFFERENT_PERIODS_DURATION,
                                   consistencyLevel: Option[ConsistencyLevel],
                                   errorPolicy: ErrorPolicy = new ThrowErrorPolicy,
                                   taskRetires: Int = CassandraConfigConstants.NBR_OF_RETIRES_DEFAULT,
@@ -88,6 +89,7 @@ object CassandraSettings extends StrictLogging {
     require(!keySpace.isEmpty, CassandraConfigConstants.MISSING_KEY_SPACE_MESSAGE)
     val pollInterval = config.getLong(CassandraConfigConstants.POLL_INTERVAL)
     val requestTimeout=config.getInt(CassandraConfigConstants.REQUEST_TIMEOUT)
+    val crossDiffDateDuration=config.getInt(CassandraConfigConstants.CROSS_DIFFERENT_DATE_DURATION)
     val consistencyLevel = config.getConsistencyLevel
     val errorPolicy = config.getErrorPolicy
     val kcqls = config.getKCQL
@@ -131,7 +133,8 @@ object CassandraSettings extends StrictLogging {
         mappingCollectionToJson = mappingCollectionToJson,
         columnRemoveMetaData = columnRemoveMetadata,
         columnStringToJson=columnStringToJson,
-        udtEnable=udtEnable
+        udtEnable=udtEnable,
+        crossDiffDateDuration=crossDiffDateDuration
       )
     }.toSeq
   }

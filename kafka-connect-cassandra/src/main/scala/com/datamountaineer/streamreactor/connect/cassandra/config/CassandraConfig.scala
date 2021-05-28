@@ -368,6 +368,15 @@ object CassandraConfigSource {
       15,
       ConfigDef.Width.LONG,
       CassandraConfigConstants.REQUEST_TIMEOUT)
+    .define(CassandraConfigConstants.CROSS_DIFFERENT_DATE_DURATION,
+      Type.INT,
+      CassandraConfigConstants.DEFAULT_CROSS_DIFFERENT_PERIODS_DURATION,
+      Importance.MEDIUM,
+      CassandraConfigConstants.CROSS_DIFFERENT_DATE_DURATION_DOC,
+      "Import",
+      16,
+      ConfigDef.Width.LONG,
+      CassandraConfigConstants.CROSS_DIFFERENT_DATE_DURATION)
 }
 
 case class CassandraConfigSource(props: util.Map[String, String])
